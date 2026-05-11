@@ -78,7 +78,7 @@ export function nextVisible(zoomRoot: Node, id: string): Node | null {
   return flat[idx + 1];
 }
 
-function flattenVisible(zoomRoot: Node): Node[] {
+export function flattenVisible(zoomRoot: Node): Node[] {
   const out: Node[] = [];
   const walk = (n: Node) => {
     for (const c of n.children) {
@@ -88,6 +88,16 @@ function flattenVisible(zoomRoot: Node): Node[] {
   };
   walk(zoomRoot);
   return out;
+}
+
+// Return the contiguous visible range between two ids (inclusive), in document order.
+export function rangeBetween(zoomRoot: Node, idA: string, idB: string): Node[] {
+  const flat = flattenVisible(zoomRoot);
+  const ia = flat.findIndex((n) => n.id === idA);
+  const ib = flat.findIndex((n) => n.id === idB);
+  if (ia < 0 || ib < 0) return [];
+  const [lo, hi] = ia <= ib ? [ia, ib] : [ib, ia];
+  return flat.slice(lo, hi + 1);
 }
 
 // --- snapshot for undo ---

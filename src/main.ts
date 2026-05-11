@@ -1,6 +1,6 @@
 import {
   Doc, Node, newDoc, newNode, getById, findPath, nodeAt, parentOf,
-  prevVisible, nextVisible, clone,
+  prevVisible, nextVisible, clone, flattenVisible, rangeBetween,
 } from './outline';
 import {
   ViewState, render, caretOffset, isCaretAtEnd, isCaretAtStart,
@@ -30,7 +30,46 @@ let state: ViewState = {
   zoomId: 'root',
   focusId: null,
   caretOffset: null,
+  selection: null,
+  selectedIds: new Set<string>(),
 };
+
+// --- selection helpers ---
+
+function recomputeSelectedIds() {
+  state.selectedIds = new Set<string>();
+  if (!state.selection) return;
+  const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+  for (const n of rangeBetween(zoom, state.selection.anchorId, state.selection.headId)) {
+    state.selectedIds.add(n.id);
+  }
+}
+
+function clearSelection() {
+  state.selection = null;
+  state.selectedIds = new Set<string>();
+}
+
+function selectedNodes(): Node[] {
+  if (!state.selection) return [];
+  const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+  return rangeBetween(zoom, state.selection.anchorId, state.selection.headId);
+}
+
+function setSelection(anchorId: string, headId: string) {
+  state.selection = { anchorId, headId };
+  recomputeSelectedIds();
+}
+
+function extendSelection(headId: string) {
+  if (!state.selection) {
+    const focus = state.focusId ?? headId;
+    setSelection(focus, headId);
+  } else {
+    state.selection.headId = headId;
+    recomputeSelectedIds();
+  }
+}
 
 // --- undo/redo ---
 const undoStack: { doc: Doc; zoomId: string; focusId: string | null; caretOffset: number | null }[] = [];
@@ -368,6 +407,144 @@ function handleToggleCollapse(currentId: string) {
   scheduleSave();
 }
 
+function scrollSelectionIntoView() {
+  if (!state.selection) return;
+  const el = outlineEl.querySelector<HTMLElement>(`[data-id="${state.selection.headId}"] > .row`);
+  el?.scrollIntoView({ block: 'nearest' });
+}
+
+// --- multi-selection bulk operations ---
+
+function sameParent(nodes: Node[]): { parent: Node; indices: number[] } | null {
+  if (nodes.length === 0) return null;
+  const firstPath = findPath(state.doc.root, nodes[0].id);
+  if (!firstPath) return null;
+  const parent = parentOf(state.doc.root, firstPath)!.parent;
+  const indices: number[] = [];
+  for (const n of nodes) {
+    const idx = parent.children.indexOf(n);
+    if (idx < 0) return null;
+    indices.push(idx);
+  }
+  // Indices must be contiguous and ascending.
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] !== indices[i - 1] + 1) return null;
+  }
+  return { parent, indices };
+}
+
+function bulkDelete() {
+  const nodes = selectedNodes();
+  if (nodes.length === 0) return;
+  // Pick focus target: visible node just before the first selected, else after the last.
+  const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+  const flat = flattenVisible(zoom);
+  const firstIdx = flat.findIndex((n) => n.id === nodes[0].id);
+  const lastIdx = flat.findIndex((n) => n.id === nodes[nodes.length - 1].id);
+  const focusTarget = flat[firstIdx - 1] ?? flat[lastIdx + 1] ?? null;
+
+  snapshot();
+  // Delete each — they may not share a parent; remove each from its own parent.
+  // Process in reverse document order so index shifts inside the same parent don't bite.
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const path = findPath(state.doc.root, nodes[i].id);
+    if (!path) continue;
+    const p = parentOf(state.doc.root, path)!;
+    p.parent.children.splice(p.index, 1);
+  }
+  // Ensure zoom root still has at least one child.
+  if (zoom.children.length === 0) {
+    const fresh = newNode('');
+    zoom.children.push(fresh);
+    state.focusId = fresh.id;
+  } else {
+    state.focusId = focusTarget?.id ?? zoom.children[0].id;
+  }
+  state.caretOffset = null;
+  clearSelection();
+  rerender();
+  scheduleSave();
+}
+
+function bulkToggleComplete() {
+  const nodes = selectedNodes();
+  if (nodes.length === 0) return;
+  const allDone = nodes.every((n) => n.completed);
+  snapshot();
+  for (const n of nodes) n.completed = !allDone;
+  rerender();
+  scheduleSave();
+}
+
+function bulkToggleCollapse() {
+  const nodes = selectedNodes().filter((n) => n.children.length > 0);
+  if (nodes.length === 0) return;
+  const allCollapsed = nodes.every((n) => n.collapsed);
+  snapshot();
+  for (const n of nodes) n.collapsed = !allCollapsed;
+  rerender();
+  scheduleSave();
+}
+
+function bulkMove(dir: -1 | 1) {
+  const nodes = selectedNodes();
+  const block = sameParent(nodes);
+  if (!block) return; // bail if selection isn't a same-parent contiguous block
+  const { parent, indices } = block;
+  const first = indices[0];
+  const last = indices[indices.length - 1];
+  if (dir === -1 && first === 0) return;
+  if (dir === 1 && last === parent.children.length - 1) return;
+  snapshot();
+  const removed = parent.children.splice(first, last - first + 1);
+  const newPos = dir === -1 ? first - 1 : first + 1;
+  parent.children.splice(newPos, 0, ...removed);
+  rerender();
+  scheduleSave();
+}
+
+function bulkIndent() {
+  const nodes = selectedNodes();
+  const block = sameParent(nodes);
+  if (!block) return;
+  const { parent, indices } = block;
+  if (indices[0] === 0) return;
+  snapshot();
+  const newParent = parent.children[indices[0] - 1];
+  newParent.collapsed = false;
+  const removed = parent.children.splice(indices[0], indices.length);
+  newParent.children.push(...removed);
+  rerender();
+  scheduleSave();
+}
+
+function bulkOutdent() {
+  const nodes = selectedNodes();
+  const block = sameParent(nodes);
+  if (!block) return;
+  const firstPath = findPath(state.doc.root, nodes[0].id);
+  if (!firstPath || firstPath.length < 2) return;
+  const grand = parentOf(state.doc.root, firstPath.slice(0, -1));
+  if (!grand) return;
+  const { parent, indices } = block;
+  snapshot();
+  const removed = parent.children.splice(indices[0], indices.length);
+  grand.parent.children.splice(grand.index + 1, 0, ...removed);
+  rerender();
+  scheduleSave();
+}
+
+async function bulkCopyMarkdown() {
+  const nodes = selectedNodes();
+  if (nodes.length === 0) return;
+  const md = nodes.map((n) => serializeMarkdown(n)).join('\n');
+  try {
+    await navigator.clipboard.writeText(md);
+  } catch (err) {
+    console.error('clipboard write failed', err);
+  }
+}
+
 function zoomTo(id: string) {
   if (id === state.zoomId) return;
   snapshot();
@@ -561,7 +738,78 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Keyboard
+// --- Mouse drag-select ---
+let dragOrigin: { id: string; x: number; y: number } | null = null;
+let dragging = false;
+
+function rowIdAt(target: EventTarget | null): string | null {
+  const el = target as HTMLElement | null;
+  const li = el?.closest('.node') as HTMLElement | null;
+  return li?.dataset.id ?? null;
+}
+
+outlineEl.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const id = rowIdAt(e.target);
+  if (!id) return;
+  // Shift+click: extend selection immediately, no drag needed.
+  if (e.shiftKey) {
+    e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.getSelection()?.removeAllRanges();
+    extendSelection(id);
+    rerender();
+    return;
+  }
+  dragOrigin = { id, x: e.clientX, y: e.clientY };
+  dragging = false;
+});
+
+outlineEl.addEventListener('mousemove', (e) => {
+  if (!dragOrigin) return;
+  const id = rowIdAt(e.target);
+  if (!id) return;
+  const moved = Math.hypot(e.clientX - dragOrigin.x, e.clientY - dragOrigin.y);
+  if (!dragging) {
+    // Enter drag-select mode when crossing into a different row, or moving > threshold.
+    if (id !== dragOrigin.id || moved > 4) {
+      dragging = true;
+      document.body.classList.add('dragging-select');
+      (document.activeElement as HTMLElement | null)?.blur();
+      window.getSelection()?.removeAllRanges();
+      setSelection(dragOrigin.id, id);
+      rerender();
+    }
+    return;
+  }
+  e.preventDefault();
+  if (state.selection && state.selection.headId !== id) {
+    state.selection.headId = id;
+    recomputeSelectedIds();
+    rerender();
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (dragging) {
+    document.body.classList.remove('dragging-select');
+  }
+  dragOrigin = null;
+  dragging = false;
+});
+
+// Clicking on an unselected text/area clears selection (without a full rerender,
+// so the click can still place a caret on the original DOM element).
+document.addEventListener('mousedown', (e) => {
+  if (e.shiftKey) return;
+  if (!state.selection) return;
+  const id = rowIdAt(e.target);
+  if (id && state.selectedIds.has(id)) return; // click inside selection → keep
+  clearSelection();
+  outlineEl.querySelectorAll('.row.selected').forEach((el) => el.classList.remove('selected'));
+}, true);
+
+// Keyboard — capture phase so we beat contenteditable native handling (esp. for Cmd+Arrow).
 document.addEventListener('keydown', (e) => {
   const meta = e.metaKey;
   const shift = e.shiftKey;
@@ -581,6 +829,59 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // --- Multi-selection branch ---
+  if (state.selection) {
+    if (e.key === 'Escape') { e.preventDefault(); clearSelection(); rerender(); return; }
+
+    // Cmd shortcuts FIRST so meta+arrow isn't swallowed by the shift+arrow branch.
+    if (meta && e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); bulkMove(-1); scrollSelectionIntoView(); return; }
+    if (meta && e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); bulkMove(1); scrollSelectionIntoView(); return; }
+    if (meta && shift && e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); bulkDelete(); return; }
+    if (meta && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); bulkToggleComplete(); return; }
+    if (meta && !shift && e.key === '.') { e.preventDefault(); e.stopPropagation(); bulkToggleCollapse(); return; }
+    if (meta && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); e.stopPropagation(); bulkCopyMarkdown(); return; }
+    if (meta && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); e.stopPropagation(); bulkCopyMarkdown().then(() => bulkDelete()); return; }
+
+    // Extend selection with Shift+ArrowUp/Down
+    if (shift && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+      const head = state.selection.headId;
+      const target = e.key === 'ArrowUp' ? prevVisible(zoom, head) : nextVisible(zoom, head);
+      if (target) {
+        state.selection.headId = target.id;
+        recomputeSelectedIds();
+        rerender();
+        scrollSelectionIntoView();
+      }
+      return;
+    }
+
+    if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); e.stopPropagation(); bulkDelete(); return; }
+    if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); if (shift) bulkOutdent(); else bulkIndent(); scrollSelectionIntoView(); return; }
+
+    // Modifier-only keypresses (Cmd/Shift/Alt/Ctrl held alone) are no-ops — don't touch selection.
+    if (e.key === 'Meta' || e.key === 'Shift' || e.key === 'Alt' || e.key === 'Control') {
+      return;
+    }
+
+    // Plain arrow (no shift): collapse selection to head and fall through to single-bullet nav.
+    if (!shift && !meta && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      const head = state.selection.headId;
+      clearSelection();
+      state.focusId = head;
+      state.caretOffset = null;
+      rerender();
+      // fall through to normal cursor movement below
+    } else {
+      // Any other unhandled keystroke just clears selection.
+      clearSelection();
+      rerender();
+      return;
+    }
+  }
+
   if (!id || !textEl) return;
 
   // Zoom in: Cmd+Shift+. ; Zoom out: Cmd+Shift+,
@@ -597,6 +898,16 @@ document.addEventListener('keydown', (e) => {
     if (!sel || sel.isCollapsed) {
       e.preventDefault();
       copySubtreeMarkdown(id);
+      return;
+    }
+  }
+
+  // Cut current bullet + subtree: Cmd+X (only when no text selection within the bullet).
+  if (meta && !shift && (e.key === 'x' || e.key === 'X')) {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      e.preventDefault();
+      copySubtreeMarkdown(id).then(() => handleDeleteBullet(id));
       return;
     }
   }
@@ -636,6 +947,20 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Start multi-selection with Shift+ArrowUp/Down (no existing selection here).
+  if (shift && !meta && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+    const target = e.key === 'ArrowUp' ? prevVisible(zoom, id) : nextVisible(zoom, id);
+    if (!target) { e.preventDefault(); return; }
+    e.preventDefault();
+    captureCaret();
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.getSelection()?.removeAllRanges();
+    setSelection(id, target.id);
+    rerender();
+    return;
+  }
+
   // Cursor up/down between bullets
   if (!meta && e.key === 'ArrowUp') {
     // Only if caret is at top-most line (simple heuristic: single line bullet)
@@ -672,7 +997,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
-});
+}, true);
 
 // Track caret on selection changes so undo restores it
 document.addEventListener('selectionchange', () => {

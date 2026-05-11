@@ -5,6 +5,8 @@ export type ViewState = {
   zoomId: string; // id of the node we're zoomed into; 'root' for top
   focusId: string | null; // node whose .text should have focus
   caretOffset: number | null; // caret position inside focused text (or null = end)
+  selection: { anchorId: string; headId: string } | null;
+  selectedIds: Set<string>; // derived from selection; populated by caller before render
 };
 
 export function render(state: ViewState, root: HTMLElement, breadcrumb: HTMLElement, title: HTMLElement) {
@@ -41,11 +43,11 @@ export function render(state: ViewState, root: HTMLElement, breadcrumb: HTMLElem
   // Outline
   root.innerHTML = '';
   for (const child of zoomNode.children) {
-    root.appendChild(renderNode(child));
+    root.appendChild(renderNode(child, state.selectedIds));
   }
 
-  // Restore focus
-  if (state.focusId) {
+  // Restore focus (skip while multi-selection is active so text caret doesn't steal it).
+  if (state.focusId && !state.selection) {
     const el = root.querySelector<HTMLElement>(`[data-id="${state.focusId}"] > .row > .text`);
     if (el) {
       placeCaret(el, state.caretOffset);
@@ -55,7 +57,7 @@ export function render(state: ViewState, root: HTMLElement, breadcrumb: HTMLElem
   }
 }
 
-function renderNode(n: Node): HTMLLIElement {
+function renderNode(n: Node, selectedIds: Set<string>): HTMLLIElement {
   const li = document.createElement('li');
   li.className = 'node';
   li.dataset.id = n.id;
@@ -65,6 +67,7 @@ function renderNode(n: Node): HTMLLIElement {
 
   const row = document.createElement('div');
   row.className = 'row';
+  if (selectedIds.has(n.id)) row.classList.add('selected');
 
   const handle = document.createElement('div');
   handle.className = 'handle collapse';
@@ -88,7 +91,7 @@ function renderNode(n: Node): HTMLLIElement {
 
   if (n.children.length) {
     const ul = document.createElement('ul');
-    for (const c of n.children) ul.appendChild(renderNode(c));
+    for (const c of n.children) ul.appendChild(renderNode(c, selectedIds));
     li.appendChild(ul);
   }
 

@@ -158,6 +158,20 @@ main {
   align-items: flex-start;
   gap: 6px;
   padding: 1px 0;
+  border-radius: 3px;
+}
+.row.selected {
+  background: #d7e7ff;
+}
+.row.selected .text {
+  caret-color: transparent;
+}
+body.dragging-select {
+  user-select: none;
+  cursor: default;
+}
+body.dragging-select .text {
+  cursor: default;
 }
 
 .handle {

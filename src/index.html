@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Todo List</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="titlebar"></div>
+    <div id="layout">
+    <aside id="sidebar">
+      <a id="sidebar-home" data-zoom="root">Home</a>
+      <ul id="sidebar-tree"></ul>
+    </aside>
+    <main id="app">
+      <nav id="breadcrumb"></nav>
+      <h1 id="zoom-title" contenteditable="false"></h1>
+      <ul id="outline" class="outline"></ul>
+    </main>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

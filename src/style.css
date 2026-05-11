@@ -1,0 +1,225 @@
+:root {
+  --text: #1f1f1f;
+  --muted: #9a9a9a;
+  --bullet: #c4c4c4;
+  --bullet-hover: #6b6b6b;
+  --accent: #2563eb;
+  --bg: #ffffff;
+  --line: #ececec;
+  --done: #b8b8b8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+#titlebar {
+  height: 28px;
+  -webkit-app-region: drag;
+}
+
+#layout {
+  display: flex;
+  align-items: flex-start;
+  min-height: calc(100vh - 28px);
+}
+
+#sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 16px 12px 120px 20px;
+  background: #fafafa;
+  border-right: 1px solid var(--line);
+  min-height: calc(100vh - 28px);
+  font-size: 13.5px;
+  color: #555;
+  overflow-y: auto;
+  user-select: none;
+}
+
+#sidebar-home {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+#sidebar-home:hover { background: #efefef; }
+#sidebar-home.active { background: #e8e8e8; }
+
+#sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+#sidebar > ul {
+  padding-left: 0;
+  border-left: none;
+}
+
+.s-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.s-row:hover { background: #efefef; }
+.s-row.active { background: #e8e8e8; color: var(--text); }
+
+.s-caret {
+  flex: 0 0 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--bullet);
+  transition: transform 0.1s ease;
+}
+.s-caret.empty { visibility: hidden; }
+.s-item.collapsed > .s-row > .s-caret { transform: rotate(-90deg); }
+
+.s-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s-item.collapsed > ul { display: none; }
+
+main {
+  flex: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 48px 120px;
+}
+
+#breadcrumb {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  min-height: 18px;
+}
+#breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+#breadcrumb a:hover { color: var(--text); }
+#breadcrumb .sep { margin: 0 6px; }
+
+#zoom-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 4px 0 16px;
+  outline: none;
+  min-height: 28px;
+}
+#zoom-title:empty::before {
+  content: "Home";
+  color: var(--muted);
+}
+
+.outline, .outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.outline ul {
+  margin-left: 7px;
+  padding-left: 19px;
+  border-left: 1px solid var(--line);
+}
+.outline ul:hover {
+  border-left-color: #d4d4d4;
+}
+
+.node { position: relative; }
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.handle {
+  flex: 0 0 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  color: var(--bullet);
+  font-size: 22px;
+  line-height: 1;
+  margin-top: 1px;
+}
+.handle:hover { color: var(--bullet-hover); }
+
+.bullet {
+  flex: 0 0 14px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  color: var(--bullet);
+  margin-top: 1px;
+}
+.bullet::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bullet);
+}
+.node.has-children > .row > .bullet::before {
+  box-shadow: 0 0 0 5px rgba(196, 196, 196, 0.25);
+}
+.bullet:hover::before { background: var(--bullet-hover); }
+
+.text {
+  flex: 1;
+  outline: none;
+  padding: 1px 2px;
+  min-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.node.completed > .row > .text {
+  color: var(--done);
+  text-decoration: line-through;
+}
+
+.node.collapsed > ul { display: none; }
+
+.handle.collapse {
+  transition: transform 0.1s ease;
+}
+.node.collapsed > .row > .handle.collapse {
+  transform: rotate(-90deg);
+}
+.node:not(.has-children) > .row > .handle.collapse {
+  visibility: hidden;
+}

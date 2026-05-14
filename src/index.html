@@ -7,6 +7,7 @@
   </head>
   <body>
     <div id="titlebar"></div>
+    <button id="help-button" title="Keyboard shortcuts (⌘/)" aria-label="Show keyboard shortcuts">?</button>
     <div id="layout">
     <aside id="sidebar">
       <a id="sidebar-home" data-zoom="root">Home</a>
@@ -17,6 +18,49 @@
       <h1 id="zoom-title" contenteditable="false"></h1>
       <ul id="outline" class="outline"></ul>
     </main>
+    </div>
+    <div id="shortcuts-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+      <div id="shortcuts-modal">
+        <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+        <div class="shortcut-grid">
+          <h3>Editing</h3>
+          <div class="sc-group">
+            <div><kbd>Enter</kbd></div><div>New bullet (context-aware)</div>
+            <div><kbd>Tab</kbd> / <kbd>⇧Tab</kbd></div><div>Indent / outdent</div>
+            <div><kbd>⌘↑</kbd> / <kbd>⌘↓</kbd></div><div>Move bullet up / down</div>
+            <div><kbd>⌘⇧⌫</kbd></div><div>Delete current bullet (and subtree)</div>
+            <div><kbd>⌘⏎</kbd></div><div>Toggle complete</div>
+            <div><kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd></div><div>Undo / redo</div>
+          </div>
+          <h3>Navigation</h3>
+          <div class="sc-group">
+            <div><kbd>↑</kbd> / <kbd>↓</kbd></div><div>Move cursor between bullets</div>
+            <div><kbd>⌘.</kbd></div><div>Collapse / expand current bullet</div>
+            <div><kbd>⌘⇧.</kbd></div><div>Collapse / expand all descendants</div>
+            <div><kbd>⌘PgDn</kbd></div><div>Zoom into current bullet</div>
+            <div><kbd>⌘PgUp</kbd></div><div>Zoom out one level</div>
+          </div>
+          <h3>Selection</h3>
+          <div class="sc-group">
+            <div>Drag</div><div>Select range of bullets</div>
+            <div><kbd>⇧Click</kbd></div><div>Extend selection to clicked bullet</div>
+            <div><kbd>⇧↑</kbd> / <kbd>⇧↓</kbd></div><div>Extend selection by one row</div>
+            <div><kbd>Esc</kbd></div><div>Clear selection</div>
+          </div>
+          <h3>Clipboard</h3>
+          <div class="sc-group">
+            <div><kbd>⌘C</kbd></div><div>Copy selection (or current subtree) as markdown</div>
+            <div><kbd>⌘⇧C</kbd></div><div>Copy current bullet subtree as markdown</div>
+            <div><kbd>⌘X</kbd></div><div>Cut selection (or current subtree)</div>
+            <div><kbd>⌘V</kbd></div><div>Paste — markdown bullets become children</div>
+          </div>
+          <h3>Help</h3>
+          <div class="sc-group">
+            <div><kbd>⌘/</kbd></div><div>Show this list</div>
+            <div><kbd>Esc</kbd></div><div>Close this list</div>
+          </div>
+        </div>
+      </div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

@@ -174,6 +174,84 @@ body.dragging-select .text {
   cursor: default;
 }
 
+#help-button {
+  position: fixed;
+  top: 6px;
+  right: 14px;
+  z-index: 50;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #d4d4d4;
+  background: #fafafa;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+#help-button:hover { background: #f0f0f0; color: var(--text); }
+
+#shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+#shortcuts-overlay.hidden { display: none; }
+
+#shortcuts-modal {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  width: min(640px, 90vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 24px 28px 28px;
+}
+
+#shortcuts-modal h2 {
+  margin: 0 0 16px;
+  font-size: 17px;
+  font-weight: 600;
+}
+#shortcuts-modal h3 {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.sc-group {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 4px 16px;
+  font-size: 13.5px;
+}
+.sc-group > div:nth-child(odd) {
+  color: var(--text);
+}
+.sc-group > div:nth-child(even) {
+  color: #555;
+}
+#shortcuts-modal kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid #d8d8d8;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #f6f6f6;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #333;
+}
+
 .handle {
   flex: 0 0 22px;
   height: 22px;

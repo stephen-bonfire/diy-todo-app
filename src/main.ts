@@ -12,6 +12,7 @@ declare global {
     api: {
       load: () => Promise<string | null>;
       save: (json: string) => Promise<void>;
+      onToggleShortcuts: (cb: () => void) => void;
     };
   }
 }
@@ -23,7 +24,9 @@ const sidebarTreeEl = document.getElementById('sidebar-tree') as HTMLElement;
 const sidebarHomeEl = document.getElementById('sidebar-home') as HTMLElement;
 
 // Sidebar's collapsed state is independent of the main outline.
+// Defaults to collapsed for any node we encounter for the first time.
 const sidebarCollapsed = new Set<string>();
+const sidebarSeen = new Set<string>();
 
 let state: ViewState = {
   doc: newDoc(),
@@ -173,6 +176,11 @@ function renderSidebarNode(n: Node): HTMLLIElement {
   li.className = 's-item';
   li.dataset.id = n.id;
   const hasChildren = n.children.some((c) => c.text.trim());
+  // First time we see this node with children, default it to collapsed.
+  if (hasChildren && !sidebarSeen.has(n.id)) {
+    sidebarCollapsed.add(n.id);
+  }
+  sidebarSeen.add(n.id);
   if (hasChildren && sidebarCollapsed.has(n.id)) li.classList.add('collapsed');
 
   const row = document.createElement('div');
@@ -407,6 +415,23 @@ function handleToggleCollapse(currentId: string) {
   scheduleSave();
 }
 
+function handleToggleCollapseRecursive(currentId: string) {
+  const n = getById(state.doc.root, currentId);
+  if (!n || n.children.length === 0) return;
+  const withKids: Node[] = [];
+  const walk = (x: Node) => {
+    if (x.children.length > 0) withKids.push(x);
+    for (const c of x.children) walk(c);
+  };
+  walk(n);
+  if (withKids.length === 0) return;
+  const allCollapsed = withKids.every((x) => x.collapsed);
+  snapshot();
+  for (const x of withKids) x.collapsed = !allCollapsed;
+  rerender();
+  scheduleSave();
+}
+
 function scrollSelectionIntoView() {
   if (!state.selection) return;
   const el = outlineEl.querySelector<HTMLElement>(`[data-id="${state.selection.headId}"] > .row`);
@@ -577,8 +602,28 @@ function moveCursor(dir: 1 | -1) {
   const id = focusedNodeId();
   if (!id) return;
   const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+
+  // If focus is in the zoom title (the zoomed-into node itself), arrow-down enters its
+  // first visible child; arrow-up does nothing (can't go above the title).
+  if (id === state.zoomId && state.zoomId !== 'root') {
+    if (dir === 1 && zoom.children.length > 0 && !zoom.collapsed) {
+      state.focusId = zoom.children[0].id;
+      state.caretOffset = null;
+      rerender();
+    }
+    return;
+  }
+
   const target = dir === -1 ? prevVisible(zoom, id) : nextVisible(zoom, id);
-  if (!target) return;
+  if (!target) {
+    // At the top of the outline: jump up into the title (if we're zoomed in).
+    if (dir === -1 && state.zoomId !== 'root') {
+      state.focusId = state.zoomId;
+      state.caretOffset = null;
+      rerender();
+    }
+    return;
+  }
   state.focusId = target.id;
   state.caretOffset = null;
   rerender();
@@ -809,12 +854,39 @@ document.addEventListener('mousedown', (e) => {
   outlineEl.querySelectorAll('.row.selected').forEach((el) => el.classList.remove('selected'));
 }, true);
 
+// --- Shortcuts overlay ---
+const shortcutsOverlay = document.getElementById('shortcuts-overlay') as HTMLElement;
+function toggleShortcutsOverlay(show?: boolean) {
+  const next = show ?? shortcutsOverlay.classList.contains('hidden');
+  shortcutsOverlay.classList.toggle('hidden', !next);
+}
+shortcutsOverlay.addEventListener('click', (e) => {
+  // Click on the dim backdrop (not the modal itself) closes.
+  if (e.target === shortcutsOverlay) toggleShortcutsOverlay(false);
+});
+try { window.api.onToggleShortcuts?.(() => toggleShortcutsOverlay()); } catch { /* preload not loaded yet */ }
+document.getElementById('help-button')?.addEventListener('click', () => toggleShortcutsOverlay());
+
 // Keyboard — capture phase so we beat contenteditable native handling (esp. for Cmd+Arrow).
 document.addEventListener('keydown', (e) => {
   const meta = e.metaKey;
   const shift = e.shiftKey;
   const textEl = focusedTextEl();
   const id = focusedNodeId();
+
+  // Toggle shortcuts overlay: Cmd+/
+  if (meta && (e.code === 'Slash' || e.key === '/')) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleShortcutsOverlay();
+    return;
+  }
+  // Esc closes the overlay if open (handled before single-bullet logic so it always works).
+  if (e.key === 'Escape' && !shortcutsOverlay.classList.contains('hidden')) {
+    e.preventDefault();
+    toggleShortcutsOverlay(false);
+    return;
+  }
 
   // Undo / Redo (global)
   if (meta && !shift && e.key === 'z') {
@@ -884,12 +956,16 @@ document.addEventListener('keydown', (e) => {
 
   if (!id || !textEl) return;
 
-  // Zoom in: Cmd+Shift+. ; Zoom out: Cmd+Shift+,
-  if (meta && shift && e.key === '>') { e.preventDefault(); zoomTo(id); return; }
-  if (meta && shift && e.key === '<') { e.preventDefault(); zoomOut(); return; }
-  // Also accept the unshifted keys in case of layout differences
-  if (meta && shift && (e.code === 'Period')) { e.preventDefault(); zoomTo(id); return; }
-  if (meta && shift && (e.code === 'Comma')) { e.preventDefault(); zoomOut(); return; }
+  // Zoom in: Cmd+PageDown ; Zoom out: Cmd+PageUp
+  if (meta && e.key === 'PageDown') { e.preventDefault(); zoomTo(id); return; }
+  if (meta && e.key === 'PageUp') { e.preventDefault(); zoomOut(); return; }
+
+  // Recursive collapse/expand: Cmd+Shift+.
+  if (meta && shift && (e.key === '.' || e.key === '>' || e.code === 'Period')) {
+    e.preventDefault();
+    handleToggleCollapseRecursive(id);
+    return;
+  }
 
   // Copy current bullet + subtree as markdown: Cmd+Shift+C
   // (Only when no text selection — otherwise let the browser copy the selected text.)

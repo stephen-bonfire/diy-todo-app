@@ -735,6 +735,12 @@ titleEl.addEventListener('input', () => {
 
 // Click handlers: bullet zoom, collapse toggle, breadcrumb
 document.addEventListener('click', (e) => {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   const target = e.target as HTMLElement;
   const action = target.dataset.action;
   const li = target.closest('.node') as HTMLElement | null;
@@ -783,6 +789,256 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// --- Drag-to-reorder bullets ---
+const dropIndicator = document.getElementById('drop-indicator') as HTMLElement;
+const DEPTH_PX = 26; // matches `.outline ul` indent (margin-left 7 + padding-left 19)
+const BULLET_OFFSET_PX = 28; // .handle width (22) + flex gap (6) — distance from .row left to bullet
+
+type DragTarget = {
+  gap: number;
+  depth: number;
+  parent: Node;
+  index: number;
+  // The list of valid (non-source) rows the gap is computed against; used by indicator.
+  validRows: HTMLElement[];
+};
+type DragState = {
+  sourceIds: string[];
+  startX: number;
+  startY: number;
+  active: boolean; // true once threshold passed
+  target: DragTarget | null;
+};
+let dragState: DragState | null = null;
+
+function visibleRowEls(): HTMLElement[] {
+  return Array.from(outlineEl.querySelectorAll<HTMLElement>('li.node')).filter((li) => {
+    // Skip nodes inside collapsed ancestors (they're not visible).
+    let p = li.parentElement;
+    while (p && p !== outlineEl) {
+      if (p.tagName === 'LI' && p.classList.contains('collapsed')) return false;
+      p = p.parentElement;
+    }
+    return true;
+  });
+}
+
+function depthOf(li: HTMLElement): number {
+  // Walks from this li's parent up to outlineEl, counting nested <ul>s.
+  // Top-level li → 0; one level deep → 1; etc.
+  let depth = 0;
+  let p = li.parentElement;
+  while (p && p !== outlineEl) {
+    if (p.tagName === 'UL') depth++;
+    p = p.parentElement;
+  }
+  return depth;
+}
+
+function findBulletXForDepth(depth: number, refRow: HTMLElement | null): number {
+  // Compute the screen X of where the bullet sits at a given depth, using a reference row.
+  if (!refRow) return outlineEl.getBoundingClientRect().left;
+  const refDepth = depthOf(refRow.closest('li.node') as HTMLElement);
+  const refLeft = refRow.getBoundingClientRect().left;
+  return refLeft + (depth - refDepth) * DEPTH_PX;
+}
+
+function computeDropTarget(clientX: number, clientY: number): DragTarget | null {
+  if (!dragState) return null;
+  const rows = visibleRowEls();
+  if (rows.length === 0) return null;
+
+  // Gap N is "before row N"; gap rows.length is "after last". Always include all
+  // visible rows so the indicator tracks the cursor smoothly.
+  // Use each row's .row child (just the bullet line) for Y — the LI itself
+  // wraps its whole subtree, which would give the wrong midpoint.
+  const rowRects = rows.map((li) => {
+    const rowEl = li.querySelector(':scope > .row') as HTMLElement;
+    return rowEl.getBoundingClientRect();
+  });
+
+  let gap = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    const mid = rowRects[i].top + rowRects[i].height / 2;
+    if (clientY < mid) { gap = i; break; }
+  }
+
+  const sourceSet = new Set(dragState.sourceIds);
+  const isInSourceSubtree = (li: HTMLElement): boolean => {
+    let cur: HTMLElement | null = li;
+    while (cur && cur !== outlineEl) {
+      if (cur.tagName === 'LI' && sourceSet.has(cur.dataset.id!)) return true;
+      cur = cur.parentElement as HTMLElement | null;
+    }
+    return false;
+  };
+
+  // The visible row immediately above the gap that is NOT in the source subtree
+  // — this anchors where we'll insert in the data model.
+  let anchorIdx = gap - 1;
+  while (anchorIdx >= 0 && isInSourceSubtree(rows[anchorIdx])) anchorIdx--;
+  // And the next non-source row below the gap, for min-depth constraint.
+  let belowIdx = gap;
+  while (belowIdx < rows.length && isInSourceSubtree(rows[belowIdx])) belowIdx++;
+  const anchorRow = anchorIdx >= 0 ? rows[anchorIdx] : null;
+  const belowRow = belowIdx < rows.length ? rows[belowIdx] : null;
+
+  // Valid depth range based on actual (non-source) neighbors.
+  const anchorDepth = anchorRow ? depthOf(anchorRow) : -1;
+  const belowDepth = belowRow ? depthOf(belowRow) : 0;
+  const maxDepth = anchorRow ? anchorDepth + 1 : 0;
+  const minDepth = belowRow ? belowDepth : 0;
+  const lo = Math.min(minDepth, maxDepth);
+  const hi = Math.max(minDepth, maxDepth);
+
+  // Pick depth from mouse X. Use the visible row at the gap (whatever it is) as reference.
+  const visualRef = rows[Math.max(0, Math.min(rows.length - 1, gap > 0 ? gap - 1 : 0))];
+  const refDepth = depthOf(visualRef);
+  const refLeft = visualRef.getBoundingClientRect().left;
+  let chosen = Math.round(refDepth + (clientX - refLeft) / DEPTH_PX);
+  chosen = Math.max(lo, Math.min(hi, chosen));
+
+  // Translate (anchorRow, chosen depth) → (parent node, insert index).
+  let parent: Node;
+  let index: number;
+  if (!anchorRow) {
+    const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+    parent = zoom;
+    index = 0;
+  } else {
+    const anchorNode = getById(state.doc.root, anchorRow.dataset.id!)!;
+    if (chosen > anchorDepth) {
+      parent = anchorNode;
+      index = 0;
+    } else if (chosen === anchorDepth) {
+      const path = findPath(state.doc.root, anchorNode.id)!;
+      const p = parentOf(state.doc.root, path)!;
+      parent = p.parent;
+      index = p.index + 1;
+    } else {
+      let cur = anchorNode;
+      let curDepth = anchorDepth;
+      while (curDepth > chosen) {
+        const path = findPath(state.doc.root, cur.id)!;
+        const p = parentOf(state.doc.root, path)!;
+        cur = p.parent;
+        curDepth--;
+      }
+      const path = findPath(state.doc.root, cur.id);
+      if (!path || path.length === 0) {
+        const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+        parent = zoom;
+        index = zoom.children.length;
+      } else {
+        const p = parentOf(state.doc.root, path)!;
+        parent = p.parent;
+        index = p.index + 1;
+      }
+    }
+  }
+
+  return { gap, depth: chosen, parent, index, validRows: rows };
+}
+
+function showDropIndicator(target: DragTarget) {
+  const rows = visibleRowEls();
+  if (rows.length === 0) { hideDropIndicator(); return; }
+
+  // Compute gap Y from .row bounding rects (NOT the LI, which includes children).
+  const rowRects = rows.map((li) => (li.querySelector(':scope > .row') as HTMLElement).getBoundingClientRect());
+  let top: number;
+  if (target.gap === 0) {
+    top = rowRects[0].top;
+  } else if (target.gap >= rows.length) {
+    top = rowRects[rowRects.length - 1].bottom;
+  } else {
+    top = (rowRects[target.gap - 1].bottom + rowRects[target.gap].top) / 2;
+  }
+
+  // X reference: the .row immediately above the gap (or below if at the top).
+  const refIdx = target.gap > 0 ? target.gap - 1 : 0;
+  const refLi = rows[refIdx];
+  const refRow = refLi.querySelector(':scope > .row') as HTMLElement;
+  const refDepth = depthOf(refLi);
+  const refLeft = refRow.getBoundingClientRect().left;
+  const left = refLeft + (target.depth - refDepth) * DEPTH_PX + BULLET_OFFSET_PX;
+
+  const outlineRect = outlineEl.getBoundingClientRect();
+  dropIndicator.style.top = `${top - 1}px`;
+  dropIndicator.style.left = `${left}px`;
+  dropIndicator.style.width = `${Math.max(40, outlineRect.right - left - 12)}px`;
+  dropIndicator.classList.remove('hidden');
+}
+
+function hideDropIndicator() {
+  dropIndicator.classList.add('hidden');
+}
+
+function executeDrop(target: NonNullable<DragState['target']>, sourceIds: string[]) {
+
+  // Safety: don't allow dropping into source subtree.
+  let parentCheck: Node | null = target.parent;
+  while (parentCheck) {
+    if (sourceIds.includes(parentCheck.id)) return;
+    const path = findPath(state.doc.root, parentCheck.id);
+    if (!path || path.length === 0) break;
+    parentCheck = parentOf(state.doc.root, path)!.parent;
+  }
+
+  // Collect source nodes (in document order) and remove them.
+  snapshot();
+  const sources: Node[] = sourceIds.map((id) => getById(state.doc.root, id)!).filter(Boolean);
+
+  // We need to be careful when removing nodes whose positions overlap with the target.
+  // Strategy: detach all sources first (storing parent+index of each), then insert at target.
+  // Because target.index was computed pre-removal, we need to adjust it if removals shift it.
+  const removals: { parent: Node; index: number }[] = [];
+  for (const n of sources) {
+    const path = findPath(state.doc.root, n.id);
+    if (!path) continue;
+    removals.push(parentOf(state.doc.root, path)!);
+  }
+
+  // Sort removals by parent identity then descending index so splices are stable.
+  // Group by parent.
+  const byParent = new Map<Node, number[]>();
+  removals.forEach((r) => {
+    if (!byParent.has(r.parent)) byParent.set(r.parent, []);
+    byParent.get(r.parent)!.push(r.index);
+  });
+
+  // Detach each — but first, adjust target.index if removals from the target.parent come before target.index.
+  let adjustedTargetIndex = target.index;
+  if (byParent.has(target.parent)) {
+    const indices = byParent.get(target.parent)!;
+    for (const i of indices) {
+      if (i < adjustedTargetIndex) adjustedTargetIndex--;
+    }
+  }
+
+  // Now splice out (highest index first within each parent).
+  byParent.forEach((idxs, parent) => {
+    idxs.sort((a, b) => b - a);
+    for (const i of idxs) parent.children.splice(i, 1);
+  });
+
+  // Insert sources at target.
+  target.parent.children.splice(adjustedTargetIndex, 0, ...sources);
+  if (target.parent !== state.doc.root) target.parent.collapsed = false;
+
+  // Keep selection on moved nodes.
+  if (sources.length > 1) {
+    setSelection(sources[0].id, sources[sources.length - 1].id);
+  } else {
+    clearSelection();
+    state.focusId = sources[0].id;
+    state.caretOffset = null;
+  }
+
+  rerender();
+  scheduleSave();
+}
+
 // --- Mouse drag-select ---
 let dragOrigin: { id: string; x: number; y: number } | null = null;
 let dragging = false;
@@ -797,6 +1053,29 @@ outlineEl.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const id = rowIdAt(e.target);
   if (!id) return;
+
+  // Bullet drag-to-reorder: starts on .bullet element.
+  const targetEl = e.target as HTMLElement;
+  if (targetEl.classList.contains('bullet')) {
+    const sourceIds = state.selectedIds.has(id)
+      ? Array.from(state.selectedIds)
+      : [id];
+    // Sort sourceIds by document order
+    const zoom = getById(state.doc.root, state.zoomId) ?? state.doc.root;
+    const flat = flattenVisible(zoom);
+    sourceIds.sort((a, b) => flat.findIndex((n) => n.id === a) - flat.findIndex((n) => n.id === b));
+
+    dragState = {
+      sourceIds,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      target: null,
+    };
+    e.preventDefault();
+    return;
+  }
+
   // Shift+click: extend selection immediately, no drag needed.
   if (e.shiftKey) {
     e.preventDefault();
@@ -808,6 +1087,41 @@ outlineEl.addEventListener('mousedown', (e) => {
   }
   dragOrigin = { id, x: e.clientX, y: e.clientY };
   dragging = false;
+});
+
+// Global mousemove for bullet drag-to-reorder.
+document.addEventListener('mousemove', (e) => {
+  if (!dragState) return;
+  if (!dragState.active) {
+    const moved = Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY);
+    if (moved < 4) return;
+    dragState.active = true;
+    document.body.classList.add('dragging-rows');
+    (document.activeElement as HTMLElement | null)?.blur();
+    // Mark source rows
+    for (const sid of dragState.sourceIds) {
+      const li = outlineEl.querySelector<HTMLElement>(`[data-id="${sid}"]`);
+      li?.querySelector('.row')?.classList.add('drag-source');
+    }
+  }
+  const target = computeDropTarget(e.clientX, e.clientY);
+  dragState.target = target;
+  if (target) showDropIndicator(target);
+  else hideDropIndicator();
+});
+
+let suppressNextClick = false;
+document.addEventListener('mouseup', () => {
+  if (!dragState) return;
+  const ds = dragState;
+  dragState = null;
+  document.body.classList.remove('dragging-rows');
+  outlineEl.querySelectorAll('.row.drag-source').forEach((el) => el.classList.remove('drag-source'));
+  hideDropIndicator();
+  if (ds.active) {
+    suppressNextClick = true;
+    if (ds.target) executeDrop(ds.target, ds.sourceIds);
+  }
 });
 
 outlineEl.addEventListener('mousemove', (e) => {

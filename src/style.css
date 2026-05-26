@@ -23,7 +23,13 @@ html, body {
 }
 
 #titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 28px;
+  background: var(--bg);
+  z-index: 40;
   -webkit-app-region: drag;
 }
 
@@ -31,6 +37,7 @@ html, body {
   display: flex;
   align-items: flex-start;
   min-height: calc(100vh - 28px);
+  padding-top: 28px;
 }
 
 #sidebar {
@@ -289,6 +296,31 @@ body.dragging-select .text {
   box-shadow: 0 0 0 5px rgba(196, 196, 196, 0.25);
 }
 .bullet:hover::before { background: var(--bullet-hover); }
+
+.row.selected .bullet { cursor: grab; }
+.bullet { cursor: pointer; }
+body.dragging-rows, body.dragging-rows * { cursor: grabbing !important; }
+body.dragging-rows .row.drag-source { opacity: 0.4; }
+
+#drop-indicator {
+  position: fixed;
+  height: 2px;
+  background: #555;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 60;
+}
+#drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+}
+#drop-indicator.hidden { display: none; }
 
 .text {
   flex: 1;

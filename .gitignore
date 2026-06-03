@@ -2,3 +2,8 @@ node_modules
 dist
 dist-electron
 .DS_Store
+
+# Build artifacts
+build/icon.iconset/
+build/icon-1024.png
+release/

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background: light blue rounded square (macOS-style "squircle" ~22.5% radius) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230" fill="#d7e7ff"/>
+
+  <!-- Three indented outline rows: bullet + line, each shifted right -->
+  <g fill="#1f3a5f">
+    <!-- Row 1 -->
+    <circle cx="260" cy="350" r="44"/>
+    <rect x="340" y="318" width="430" height="64" rx="32" ry="32"/>
+
+    <!-- Row 2 (indented one level) -->
+    <circle cx="380" cy="512" r="44"/>
+    <rect x="460" y="480" width="310" height="64" rx="32" ry="32"/>
+
+    <!-- Row 3 (indented one more level) -->
+    <circle cx="500" cy="674" r="44"/>
+    <rect x="580" y="642" width="190" height="64" rx="32" ry="32"/>
+  </g>
+</svg>

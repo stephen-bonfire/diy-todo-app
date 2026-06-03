@@ -1,9 +1,8 @@
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 
@@ -103,32 +102,8 @@ function ensureWindow(): BrowserWindow {
   return mainWindow!;
 }
 
-function buildTray() {
-  // Use a Template image — macOS auto-tints it for light/dark menu bar.
-  const trayIconPath = resolveAsset('build', 'tray.png');
-  const img = nativeImage.createFromPath(trayIconPath);
-  img.setTemplateImage(true);
-  tray = new Tray(img);
-  tray.setToolTip('Todo List');
-
-  const showApp = () => {
-    const win = ensureWindow();
-    showAndFocus(win);
-  };
-
-  tray.on('click', showApp);
-
-  const menu = Menu.buildFromTemplate([
-    { label: 'Open Todo List', click: showApp },
-    { type: 'separator' },
-    { label: 'Quit', role: 'quit' },
-  ]);
-  tray.setContextMenu(menu);
-}
-
 app.whenReady().then(() => {
   buildMenu();
-  buildTray();
   createWindow();
 });
 

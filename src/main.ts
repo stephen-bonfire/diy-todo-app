@@ -5,7 +5,9 @@ import {
 import {
   ViewState, render, caretOffset, isCaretAtEnd, isCaretAtStart,
 } from './render';
-import { parseMarkdown, serializeMarkdown } from './markdown';
+import {
+  parseMarkdown, serializeMarkdown, serializeSelection, serializeSubtrees,
+} from './markdown';
 
 declare global {
   interface Window {
@@ -559,15 +561,28 @@ function bulkOutdent() {
   scheduleSave();
 }
 
-async function bulkCopyMarkdown() {
-  const nodes = selectedNodes();
-  if (nodes.length === 0) return;
-  const md = nodes.map((n) => serializeMarkdown(n)).join('\n');
+async function writeClipboard(md: string) {
   try {
     await navigator.clipboard.writeText(md);
   } catch (err) {
     console.error('clipboard write failed', err);
   }
+}
+
+// Copy: the clipboard mirrors the highlight — selected bullets only, keeping the
+// nesting they have among themselves. Unselected descendants are not copied.
+async function bulkCopyMarkdown() {
+  const nodes = selectedNodes();
+  if (nodes.length === 0) return;
+  await writeClipboard(serializeSelection(state.doc.root, nodes));
+}
+
+// Cut: bulkDelete removes whole subtrees, so the clipboard must carry them too.
+// Nodes already covered by a selected ancestor are skipped to avoid duplicates.
+async function bulkCutMarkdown() {
+  const nodes = selectedNodes();
+  if (nodes.length === 0) return;
+  await writeClipboard(serializeSubtrees(state.doc.root, nodes));
 }
 
 function zoomTo(id: string) {
@@ -1226,7 +1241,7 @@ document.addEventListener('keydown', (e) => {
     if (meta && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); bulkToggleComplete(); return; }
     if (meta && !shift && e.key === '.') { e.preventDefault(); e.stopPropagation(); bulkToggleCollapse(); return; }
     if (meta && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); e.stopPropagation(); bulkCopyMarkdown(); return; }
-    if (meta && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); e.stopPropagation(); bulkCopyMarkdown().then(() => bulkDelete()); return; }
+    if (meta && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); e.stopPropagation(); bulkCutMarkdown().then(() => bulkDelete()); return; }
 
     // Extend selection with Shift+ArrowUp/Down
     if (shift && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {

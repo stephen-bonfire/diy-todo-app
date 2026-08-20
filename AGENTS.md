@@ -23,9 +23,15 @@ npm run build                 # Build renderer and Electron
 npm run build:icon            # Rebuild icon from SVG
 ```
 
-## After Merging to Main
+## After Merging Code or Assets to Main
 
-Always rebuild and reinstall the packaged app bundle to `/Applications`, or the Dock icon keeps launching the old build.
+Rebuild and reinstall the packaged app bundle to `/Applications` only when code, assets, or build config changed. Skip this for documentation-only merges (README, AGENTS.md, comments, etc.).
+
+**Code/asset changes:** `src/`, `electron/`, `build/`, `scripts/`, or any asset files.
+
+**Docs-only:** `README.md`, `AGENTS.md`, comments, `.gitignore`.
+
+Without a reinstall, the Dock icon will keep launching the old build.
 
 ```bash
 npm run build:icon

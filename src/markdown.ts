@@ -1,6 +1,6 @@
 // Markdown <-> outline node tree.
 
-import { Node, newNode } from './outline';
+import { Node, newNode, findPath, nodeAt } from './outline';
 
 const BULLET_RE = /^(\s*)(?:[-*+]|\d+\.)\s+(.*)$/;
 const CHECKBOX_RE = /^\[([ xX])\]\s+(.*)$/;
@@ -100,15 +100,63 @@ export function parseMarkdown(input: string): Node[] {
   return buildTree(lines);
 }
 
+// Indent written for each nesting level when serializing. Parsing stays width-agnostic —
+// it compares indents rather than dividing by a fixed step — so older 2-space text still loads.
+const INDENT = '    ';
+
 /** Serialize a node and its subtree to markdown. The given node is rendered at depth 0. */
 export function serializeMarkdown(node: Node): string {
   const out: string[] = [];
   const walk = (n: Node, depth: number) => {
-    const indent = '  '.repeat(depth);
+    const indent = INDENT.repeat(depth);
     const mark = n.completed ? '- [x] ' : '- ';
     out.push(`${indent}${mark}${n.text}`);
     for (const c of n.children) walk(c, depth + 1);
   };
   walk(node, 0);
   return out.join('\n');
+}
+
+function bulletLine(n: Node, depth: number): string {
+  return `${INDENT.repeat(depth)}${n.completed ? '- [x] ' : '- '}${n.text}`;
+}
+
+// How many of a node's ancestors are themselves in `ids`.
+function selectedAncestorCount(root: Node, n: Node, ids: Set<string>): number {
+  const path = findPath(root, n.id);
+  if (!path) return -1;
+  let count = 0;
+  for (let i = 1; i < path.length; i++) {
+    if (ids.has(nodeAt(root, path.slice(0, i)).id)) count++;
+  }
+  return count;
+}
+
+/**
+ * Serialize exactly the given nodes and nothing else. Descendants that were not
+ * themselves selected are left out; nesting among the selected nodes is preserved.
+ * Used for copying a multi-bullet selection, so the clipboard matches the highlight.
+ */
+export function serializeSelection(root: Node, nodes: Node[]): string {
+  const ids = new Set(nodes.map((n) => n.id));
+  const out: string[] = [];
+  for (const n of nodes) {
+    const depth = selectedAncestorCount(root, n, ids);
+    if (depth < 0) continue;
+    out.push(bulletLine(n, depth));
+  }
+  return out.join('\n');
+}
+
+/**
+ * Serialize the given nodes as full subtrees, dropping any node already covered by a
+ * selected ancestor so no bullet is emitted twice. Used for cut, where the clipboard
+ * must hold everything the delete removes.
+ */
+export function serializeSubtrees(root: Node, nodes: Node[]): string {
+  const ids = new Set(nodes.map((n) => n.id));
+  return nodes
+    .filter((n) => selectedAncestorCount(root, n, ids) === 0)
+    .map((n) => serializeMarkdown(n))
+    .join('\n');
 }

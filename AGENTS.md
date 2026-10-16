@@ -51,7 +51,7 @@ npx asar list /Applications/Todo\ List.app/Contents/Resources/app.asar | grep "d
 
 Should list the exact `dist/assets/index-*.js` hash the build just emitted.
 
-Why: `/Applications/Todo List.app` is a self-contained bundle holding its own compiled renderer. Merging to main or running `npm start` changes nothing about it. User data (outline.json) lives in `~/Library/Application Support/Todo List/`, not inside the bundle, so replacing it is safe.
+Why: `/Applications/Todo List.app` is a self-contained bundle holding its own compiled renderer. Merging to main or running `npm start` changes nothing about it. User data (outline.json) lives in `~/Library/Application Support/todo-list/`, not inside the bundle, so replacing it is safe.
 
 ## Full Distribution Build
 
@@ -63,7 +63,7 @@ Creates a universal macOS DMG (arm64 + x64) in `release/`. Requires Xcode Comman
 
 ## Data Persistence
 
-Outlines live as JSON in `~/Library/Application Support/Todo List/outline.json`. You can edit it directly, but the app will overwrite it on the next save. No cloud sync or collaboration.
+Outlines live as JSON in `~/Library/Application Support/todo-list/outline.json`. You can edit it directly, but the app will overwrite it on the next save. No cloud sync or collaboration.
 
 ## Stack
 
